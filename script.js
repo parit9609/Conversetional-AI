@@ -1,4 +1,4 @@
-    const recordButton = document.getElementById('record');
+const recordButton = document.getElementById('record');
 const stopButton = document.getElementById('stop');
 const audioElement = document.getElementById('audio');
 const uploadForm = document.getElementById('uploadForm');
