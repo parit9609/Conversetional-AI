@@ -51,7 +51,7 @@ def generate(filename, prompt):
 
 app = Flask(__name__)
 
-# Configure upload folder
+
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'wav'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
