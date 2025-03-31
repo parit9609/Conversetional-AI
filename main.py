@@ -12,7 +12,7 @@ def generate(filename, prompt):
     )
 
     files = [
-        # Make the file available in local system working directory
+        
         client.files.upload(file=filename),
     ]
 
