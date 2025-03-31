@@ -34,31 +34,6 @@
                     {% endif %}
                     {% endfor %}
                 </ul>
-            <!--</td>
-            <td style="width:50%">
-                <h2>Type in your text to generate audio</h2>
-                <form action="/upload_text" method="post">
-                    <textarea name="text" rows="10" cols="50"></textarea>
-                    <br>
-                    <input type="submit" value="Upload">
-                </form>
-                <hr>
-                <h2>Generated Audio Files</h2>
-                <ul>
-                    {% for tts_file in tts_files %}
-                    {% if tts_file.endswith('.wav') %}
-                    <li>
-                        <audio controls>
-                            <source src="{{ url_for('get_tts_file', filename=tts_file) }}" type="audio/wav">
-                            Your browser does not support the audio element.
-                        </audio><br>
-                        {{ tts_file }}
-                        <a href="{{ url_for('get_tts_file', filename=tts_file.split('.wav')[0] + '.txt') }}">{{ tts_file }}.txt</a>
-                    </li>
-                    {% endif %}
-                    {% endfor %}
-                </ul>
-            </td>-->
         </tr>
     </table>
 </body>
