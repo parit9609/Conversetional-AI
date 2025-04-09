@@ -6,34 +6,68 @@
 <body>
     <table style="width:100%">
         <tr>
-            <td style="width:50%">
-                <h2>Record and Upload Audio</h2>
+            <!-- LEFT SIDE: Gemini + TTS Answers -->
+            <td style="width:50%; vertical-align: top;">
+                <h2>Answer from Book</h2>
+                <ul>
+                    {% for tts_file in tts_files %}
+                    {% if tts_file.endswith('.wav') %}
+                    <li>
+                        <audio controls>
+                            <source src="{{ url_for('get_tts_file', filename=tts_file) }}" type="audio/wav">
+                            Your browser does not support the audio element.
+                        </audio><br>
+                        {{ tts_file }}
+                        <a href="{{ url_for('get_tts_file', filename=tts_file.replace('.wav', '.txt')) }}">
+                            {{ tts_file.replace('.wav', '') }}.txt
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+                </ul>
+            </td>
 
-                <button id="record">Record</button>
-                <button id="stop">Stop</button>
-                <span id="timer">00:00</span>
-                <audio id="audio"></audio>
-                <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
+            <!-- RIGHT SIDE: User Question Recording -->
+            <td style="width:50%; vertical-align: top;">
+                <h2>Upload Book and Record Audio</h2>
+
+                <!-- Upload Form -->
+                <form id="uploadForm" method="POST" action="/ask_about_book" enctype="multipart/form-data">
+                    <label for="pdfInput"><strong>Select Book (PDF):</strong></label><br>
+                    <input type="file" name="pdf_file" id="pdfInput" accept="application/pdf" required><br><br>
+
+                    <button type="button" id="record">Record</button>
+                    <button type="button" id="stop">Stop</button>
+                    <span id="timer">00:00</span><br><br>
+
+                    
+
                     <input type="hidden" name="audio_data" id="audioData">
                 </form>
+
                 <script src="script.js"></script>
+
                 <hr>
-                <h2>Recorded Files</h2>
+
+                <h2>Recorded Questions</h2>
                 <ul>
-                    {% for file in files %}
+                    {% for file in audio_files %}
                     {% if file.endswith('.wav') %}
                     <li>
                         <audio controls>
                             <source src="{{ url_for('uploaded_file', filename=file) }}" type="audio/wav">
                             Your browser does not support the audio element.
                         </audio><br>
+                        
                         {{ file }}
-                        <a href="{{ url_for('uploaded_file', filename=file + '.txt') }}">{{ file.replace('.wav', '') }}.txt</a>
-
+                        <a href="{{ url_for('uploaded_file', filename=file.replace('.wav', '.txt')) }}">
+                            
+                        </a>
                     </li>
                     {% endif %}
                     {% endfor %}
                 </ul>
+            </td>
         </tr>
     </table>
 </body>
