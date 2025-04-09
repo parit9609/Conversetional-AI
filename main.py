@@ -1,37 +1,59 @@
-from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, send_file, send_from_directory
-from werkzeug.utils import secure_filename
 import os
-import base64
+from datetime import datetime
+from flask import Flask, render_template, request, redirect, send_file, send_from_directory, flash
+from google.cloud import texttospeech_v1
 from google import genai
 from google.genai import types
 
-def generate(filename, prompt):
-    client = genai.Client(
-        api_key=os.environ.get("GEMINI_API_KEY"),
-    )
+app = Flask(__name__)
 
-    files = [
-        
-        client.files.upload(file=filename),
+UPLOAD_FOLDER = 'uploads'
+TTS_FOLDER = 'tts'
+ALLOWED_EXTENSIONS = {'wav', 'pdf'}
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['TTS_FOLDER'] = TTS_FOLDER
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(TTS_FOLDER, exist_ok=True)
+tts_client = texttospeech_v1.TextToSpeechClient()
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_files(folder):
+    return sorted(os.listdir(folder), reverse=True)
+
+def synthesize_speech(text, output_path):
+    input_data = texttospeech_v1.SynthesisInput(text=text)
+    voice = texttospeech_v1.VoiceSelectionParams(language_code="en-UK")
+    audio_config = texttospeech_v1.AudioConfig(audio_encoding="LINEAR16")
+
+    request = texttospeech_v1.SynthesizeSpeechRequest(
+        input=input_data,
+        voice=voice,
+        audio_config=audio_config,
+    )
+    response = tts_client.synthesize_speech(request=request)
+
+    with open(output_path, 'wb') as out:
+        out.write(response.audio_content)
+
+def generate_with_pdf_and_audio(audio_path, pdf_path, prompt_text):
+    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
+    uploaded_audio = client.files.upload(file=audio_path)
+    uploaded_pdf = client.files.upload(file=pdf_path)
+
+    contents = [
+        types.Content(role="user", parts=[
+            types.Part.from_uri(file_uri=uploaded_audio.uri, mime_type=uploaded_audio.mime_type),
+            types.Part.from_uri(file_uri=uploaded_pdf.uri, mime_type=uploaded_pdf.mime_type),
+            types.Part.from_text(text=prompt_text),
+        ])
     ]
 
-    model = "gemini-2.0-flash"
-    contents = [
-        types.Content(
-            role="user",
-            parts=[
-                types.Part.from_uri(
-                    file_uri=files[0].uri,
-                    mime_type=files[0].mime_type,
-                ),
-                types.Part.from_text(text=prompt),
-            ],
-        ),
-
-    ]    
-
-    generate_content_config = types.GenerateContentConfig(
+    config = types.GenerateContentConfig(
         temperature=1,
         top_p=0.95,
         top_k=40,
@@ -40,85 +62,73 @@ def generate(filename, prompt):
     )
 
     response = client.models.generate_content(
-        model=model,
+        model="gemini-2.0-flash",
         contents=contents,
-        config=generate_content_config,
+        config=config,
     )
 
-    print(response)
     return response.text
 
 
-app = Flask(__name__)
-
-
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'wav'}
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-def allowed_file(filename):
-    return '.' in filename and \
-        filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def get_files():
-    files = []
-    for filename in os.listdir(UPLOAD_FOLDER):
-        if allowed_file(filename):
-            files.append(filename)
-            print(filename)
-    files.sort(reverse=True)
-    return files
-
 @app.route('/')
 def index():
-    files = get_files()
-    return render_template('index.html', files=files)
+    audio_files = get_files(app.config['UPLOAD_FOLDER'])
+    tts_files = get_files(app.config['TTS_FOLDER'])
+    return render_template('index.html', audio_files=audio_files, tts_files=tts_files)
 
-@app.route('/upload', methods=['POST'])
-def upload_audio():
-    if 'audio_data' not in request.files:
-        flash('No audio data')
-        return redirect(request.url)
-    file = request.files['audio_data']
-    if file.filename == '':
-        flash('No selected file')
-        return redirect(request.url)
-    if file:
-        filename = datetime.now().strftime("%Y%m%d-%I%M%S%p") + '.wav'
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
+@app.route('/ask_about_book', methods=['POST'])
+def ask_about_book():
+    pdf_file = request.files.get('pdf_file')
+    audio_file = request.files.get('audio_data')
 
-        prompt = """
-        Please provide an exact transcript for the audio, followed by sentiment analysis.
+    if not (pdf_file and audio_file and allowed_file(pdf_file.filename) and allowed_file(audio_file.filename)):
+        flash('Both PDF and Audio files are required.')
+        return redirect('/')
 
-        Your response should follow the format:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    pdf_filename = f"{timestamp}.pdf"
+    audio_filename = f"{timestamp}.wav"
 
-        Text: USERS SPEECH TRANSCRIPTION
+    pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf_filename)
+    audio_path = os.path.join(app.config['UPLOAD_FOLDER'], audio_filename)
+    tts_path = os.path.join(app.config['TTS_FOLDER'], f"{timestamp}_response.wav")
+    txt_path = os.path.join(app.config['TTS_FOLDER'], f"{timestamp}_response.txt")
+    
 
-        Sentiment Analysis: positive|neutral|negative
-        """
+    pdf_file.save(pdf_path)
+    audio_file.save(audio_path)
 
-        text  = generate(file_path, prompt)
-        f = open(file_path + '.txt', 'w')
-        f.write(text)
-        f.close()
+    
+    prompt = "Briefly answer the user's question in the audio based on the content of the book."
+
+    config = types.GenerateContentConfig(
+        temperature=1,
+        top_p=0.95,
+        top_k=40,
+        max_output_tokens=1024,
+        response_mime_type="text/plain",
+    )
+
+    gemini_response = generate_with_pdf_and_audio(audio_path, pdf_path, prompt)
+
+    with open(txt_path, 'w') as f:
+        f.write(gemini_response)
+        
+    synthesize_speech(gemini_response, tts_path)
 
     return redirect('/')
-
-
-@app.route('/upload/<filename>')
-def get_file(filename):
-    return send_file(filename)
-
-@app.route('/script.js', methods=['GET'])
-def scripts_js():
-    return send_file('./script.js')
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/tts/<filename>')
+def get_tts_file(filename):
+    return send_from_directory(app.config['TTS_FOLDER'], filename)
+
+@app.route('/script.js', methods=['GET'])
+def scripts_js():
+    return send_file('./script.js')
 
 if __name__ == '__main__':
     app.run(debug=True)
